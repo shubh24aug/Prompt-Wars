@@ -2,60 +2,59 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WeatherType, LevelConfig } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const generateLevelConfig = async (levelNumber: number): Promise<LevelConfig> => {
   try {
+    // Correct initialization using named parameter and direct process.env.API_KEY
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Generate a weather and traffic report for level ${levelNumber} of 'Mario's Morning Commute'. 
-      Mario is trying to get to his office. 
-      
-      RULES:
-      - Level 1: Intro. Levels 2-4: Escalating. Level 5: Extreme finale.
-      - SUNNY: High friction (0.95), no wind, perfect visibility.
-      - RAINY: Low friction (0.6), medium visibility (0.8).
-      - SNOWY: Very low friction (0.4), low visibility (0.6).
-      - WINDY: Strong wind force (-5 to 5), medium friction.
-      - FOGGY: Very low visibility (0.2), normal friction.
-
-      The 'description' should be a funny radio-style news bite.
-      The 'strategy' MUST give a clear, practical gameplay tip based on the weather/traffic (e.g., "Tap jump for precision in high winds" or "Watch for cars hidden in fog").`,
+      contents: `Generate a report for level ${levelNumber}.`,
       config: {
+        systemInstruction: `You are a witty AI traffic reporter for the game 'Mario's Morning Commute'. 
+        Provide a level configuration in JSON. 
+        Difficulty scales: Day 1 is easy/sunny; Day 5 is extreme traffic/bad weather.
+        Weather: SUNNY, RAINY, FOGGY, SNOWY, WINDY.
+        Traffic: 1 to 10.
+        Friction: 0.3 (ice) to 1.0 (perfect).
+        Visibility: 0.1 (blind) to 1.0 (clear).`,
+        // Thinking budget is appropriate for Gemini 3 Flash
+        thinkingConfig: { thinkingBudget: 1000 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            weather: { type: Type.STRING, description: 'One of: SUNNY, RAINY, FOGGY, SNOWY, WINDY' },
-            trafficDensity: { type: Type.NUMBER, description: '1 to 10 scale' },
-            visibility: { type: Type.NUMBER, description: '0 to 1 scale' },
-            friction: { type: Type.NUMBER, description: '0.1 to 0.95' },
-            windSpeed: { type: Type.NUMBER, description: '-10 to 10' },
-            description: { type: Type.STRING, description: 'A funny commuter report (max 80 chars).' },
-            strategy: { type: Type.STRING, description: 'Actionable gameplay tip based on conditions.' },
+            weather: { type: Type.STRING, enum: ['SUNNY', 'RAINY', 'FOGGY', 'SNOWY', 'WINDY'] },
+            trafficDensity: { type: Type.NUMBER },
+            visibility: { type: Type.NUMBER },
+            friction: { type: Type.NUMBER },
+            windSpeed: { type: Type.NUMBER },
+            description: { type: Type.STRING },
+            strategy: { type: Type.STRING },
           },
           required: ['weather', 'trafficDensity', 'visibility', 'friction', 'windSpeed', 'description', 'strategy']
         }
       }
     });
 
-    const data = JSON.parse(response.text);
+    // Accessing .text property directly as it returns string | undefined
+    const data = JSON.parse(response.text || '{}');
     return {
       ...data,
       levelNumber,
-      weather: data.weather as WeatherType
+      weather: (data.weather as WeatherType) || WeatherType.SUNNY
     };
   } catch (error) {
-    console.error("Gemini Error, using fallback config:", error);
+    console.warn("Gemini service failed, using fallback.", error);
     return {
       levelNumber,
       weather: WeatherType.SUNNY,
-      trafficDensity: 3,
+      trafficDensity: Math.min(levelNumber * 2, 10),
       visibility: 1,
       friction: 0.9,
       windSpeed: 0,
-      description: "Clear skies and moderate traffic. A perfect day for a promotion!",
-      strategy: "Keep moving right. Use platforms to jump over cars safely.",
+      description: "Standard morning commute. Regular traffic reported.",
+      strategy: "Keep moving right. Use platforms to avoid slow-moving vehicles.",
     };
   }
 };

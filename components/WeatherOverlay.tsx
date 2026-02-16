@@ -1,15 +1,5 @@
-
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { WeatherType } from '../types';
-
-interface Particle {
-  id: number;
-  x: number;
-  y: number;
-  speed: number;
-  size: number;
-  angle: number;
-}
 
 interface Props {
   type: WeatherType;
@@ -17,90 +7,73 @@ interface Props {
 }
 
 const WeatherOverlay: React.FC<Props> = ({ type, intensity }) => {
-  const [particles, setParticles] = useState<Particle[]>([]);
-  const requestRef = useRef<number>();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const particles = useRef<any[]>([]);
 
   useEffect(() => {
-    // Determine particle count based on intensity
-    const count = intensity * 15;
-    const initialParticles = Array.from({ length: count }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      speed: Math.random() * 2 + (type === WeatherType.RAINY ? 5 : 1),
-      size: type === WeatherType.SNOWY ? Math.random() * 4 + 2 : 1,
-      angle: Math.random() * Math.PI * 2
+    const count = intensity * 20;
+    particles.current = Array.from({ length: count }, () => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * 320,
+      vx: type === WeatherType.WINDY ? Math.random() * 5 + 5 : (Math.random() - 0.5) * 1,
+      vy: type === WeatherType.RAINY ? Math.random() * 10 + 10 : Math.random() * 2 + 1,
+      size: type === WeatherType.SNOWY ? Math.random() * 3 + 1 : 1.5,
     }));
-    setParticles(initialParticles);
 
-    const animate = () => {
-      setParticles(prev => prev.map(p => {
-        let nx = p.x;
-        let ny = p.y;
-        
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let rafId: number;
+
+    const render = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      if (type === WeatherType.FOGGY) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      ctx.fillStyle = type === WeatherType.RAINY ? 'rgba(180, 210, 255, 0.6)' : 'rgba(255, 255, 255, 0.8)';
+      ctx.strokeStyle = 'rgba(180, 210, 255, 0.4)';
+      
+      particles.current.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.y > canvas.height) p.y = -10;
+        if (p.x > canvas.width) p.x = -10;
+        if (p.x < -10) p.x = canvas.width;
+
         if (type === WeatherType.RAINY) {
-          ny = (ny + p.speed) % 100;
-        } else if (type === WeatherType.SNOWY) {
-          ny = (ny + p.speed * 0.5) % 100;
-          nx = (nx + Math.sin(ny / 5) * 0.5) % 100;
-        } else if (type === WeatherType.WINDY) {
-          nx = (nx + (intensity > 5 ? 4 : 2)) % 100;
-          ny = (ny + Math.sin(nx / 10) * 0.2) % 100;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x, p.y + 10);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
         }
+      });
 
-        return { ...p, x: nx, y: ny };
-      }));
-      requestRef.current = requestAnimationFrame(animate);
+      rafId = requestAnimationFrame(render);
     };
 
-    requestRef.current = requestAnimationFrame(animate);
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    };
+    rafId = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(rafId);
   }, [type, intensity]);
 
   if (type === WeatherType.SUNNY) return null;
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
-      {/* Fog Layer */}
-      {type === WeatherType.FOGGY && (
-        <div className="absolute inset-0 bg-white/30 backdrop-blur-[1px] mix-blend-overlay" />
-      )}
-      
-      {/* Dynamic Particles */}
-      {particles.map(p => (
-        <div
-          key={p.id}
-          className={`absolute transition-none ${
-            type === WeatherType.RAINY ? 'w-[1px] h-4 bg-blue-200/60' : 
-            type === WeatherType.SNOWY ? 'bg-white rounded-full' :
-            type === WeatherType.WINDY ? 'w-8 h-[1px] bg-white/20' : ''
-          }`}
-          style={{
-            left: `${p.x}%`,
-            top: `${p.y}%`,
-            width: type === WeatherType.SNOWY ? `${p.size}px` : undefined,
-            height: type === WeatherType.SNOWY ? `${p.size}px` : undefined,
-            opacity: type === WeatherType.RAINY ? 0.4 : 0.8
-          }}
-        />
-      ))}
-
-      {/* Lightning effect for heavy rain */}
-      {type === WeatherType.RAINY && intensity > 7 && (
-        <div className="absolute inset-0 animate-[flash_5s_infinite] bg-white pointer-events-none mix-blend-overlay opacity-0" />
-      )}
-
-      <style>{`
-        @keyframes flash {
-          0%, 94%, 100% { opacity: 0; }
-          95% { opacity: 0.3; }
-          96% { opacity: 0; }
-          97% { opacity: 0.5; }
-        }
-      `}</style>
-    </div>
+    <canvas 
+      ref={canvasRef} 
+      width={window.innerWidth} 
+      height={320} 
+      className="absolute inset-0 pointer-events-none z-40"
+    />
   );
 };
 
